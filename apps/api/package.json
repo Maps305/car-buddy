@@ -23,6 +23,7 @@
     "@vercel/functions": "^3.11.3",
     "dotenv": "^18.0.10",
     "drizzle-orm": "^0.45.4",
+    "jose": "^6.2.18",
     "openai": "^7.64.0",
     "pg": "^8.23.1",
     "reflect-metadata": "^0.2.2",

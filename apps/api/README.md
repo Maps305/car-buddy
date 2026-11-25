@@ -10,6 +10,7 @@ NestJS backend for the Moovah Car Buddy WhatsApp claims agent.
 | `src/conversation/` | Webhook controller, per-phone session state, router, customer-facing replies |
 | `src/extraction/` | Police report extraction for the **Moovah Motor Accident Police Report (D1)** form, plus rule-based review |
 | `src/caimex/` | CAIMEx client (OpenAI-compatible). `chat()` for the agent, `extractStructured()` for schema-validated JSON |
+| `src/staff/` | Staff portal API: login (JWT), claim queue and detail, document files, and role-checked actions (review, assign, assess, decide) |
 | `src/claims/` | Claims service: drafts, documents, status changes. `claim-transitions.ts` holds the allowed moves; customers and the agent can only submit, cancel a draft, or answer an info request |
 | `src/customers/` | Customer + active policy + vehicles lookup by WhatsApp number |
 | `src/db/` | Drizzle schema and database module. Migrations live in `drizzle/` |
@@ -23,8 +24,10 @@ npm install
 cp .env.example .env
 npm run db:up        # Postgres 17 in Docker (docker-compose.yml at repo root)
 npm run db:migrate
-npm run db:seed      # loads data/demo-customers.json; safe to re-run
+npm run db:seed      # loads data/demo-customers.json and data/demo-staff.json; safe to re-run
 ```
+
+`db:seed` needs `SEED_STAFF_PASSWORD` in `.env`: every account in `data/demo-staff.json` gets that password. The API also needs `JWT_SECRET` (32+ characters, e.g. `openssl rand -base64 48`) or it won't start.
 
 To use a hosted database (Neon, Supabase), point `DATABASE_URL` at it and skip `db:up`.
 
@@ -57,6 +60,21 @@ Expose it so Meta can reach the webhook, e.g. `cloudflared tunnel --url http://l
 | Anything else (text or photo) | IDLE | CAIMEx car-buddy assistant, with the photo if sent |
 
 The webhook answers 200 immediately and processes in the background (`waitUntil` on Vercel). Messages from one number are handled in order; duplicate deliveries are ignored.
+
+## Staff portal API
+
+All routes except login need `Authorization: Bearer <token>`. The Next.js portal in `apps/web` calls these server-side.
+
+| Route | Who | Does |
+| --- | --- | --- |
+| `POST /staff/auth/login` | anyone | Email + password → token (12 h) |
+| `GET /staff/claims?status=A,B` | processor: all, assessor: assigned only | Queue |
+| `GET /staff/claims/:id` | same | Claim, customer, vehicle, documents with extraction and review, history, allowed actions |
+| `GET /staff/claims/:id/documents/:docId/file` | same | The uploaded file |
+| `GET /staff/assessors` | processor | Assessors to assign |
+| `POST /staff/claims/:id/actions/:action` | depends | `start-review`, `assign`, `start-assessment`, `submit-assessment`, `request-info`, `resume-review`, `approve`, `reject`, `close` |
+
+Processors review, assign, request information and decide. Assessors start and submit assessments only on claims assigned to them. Every action goes through the claim status rules and writes a `claim_events` row with the staff member as actor.
 
 ## Data
 

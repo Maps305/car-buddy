@@ -6,6 +6,7 @@ import { claimDocuments, claimEvents, claims, type ClaimStatus } from '../db/sch
 import { canTransition, InvalidTransitionError, type Actor } from './claim-transitions';
 
 export type Claim = typeof claims.$inferSelect;
+export type Tx = Parameters<Parameters<Database['transaction']>[0]>[0];
 export type ClaimDocument = typeof claimDocuments.$inferSelect;
 export type NewClaimDocument = Omit<typeof claimDocuments.$inferInsert, 'id' | 'claimId' | 'createdAt'>;
 
@@ -118,19 +119,25 @@ export class ClaimsService {
       .where(and(eq(claims.id, claimId), eq(claims.status, 'DRAFT')));
   }
 
-  async transition(claimId: string, to: ClaimStatus, actor: Actor, data?: Record<string, unknown>): Promise<Claim> {
-    return this.db.transaction(async (tx) => {
-      const [current] = await tx.select().from(claims).where(eq(claims.id, claimId)).for('update');
+  async transition(
+    claimId: string,
+    to: ClaimStatus,
+    actor: Actor,
+    data?: Record<string, unknown>,
+    tx?: Tx,
+  ): Promise<Claim> {
+    const run = async (t: Tx) => {
+      const [current] = await t.select().from(claims).where(eq(claims.id, claimId)).for('update');
       if (!current) throw new NotFoundException(`Claim ${claimId} not found`);
       if (!canTransition(current.status, to, actor)) throw new InvalidTransitionError(current.status, to, actor);
 
       const now = new Date();
-      const [updated] = await tx
+      const [updated] = await t
         .update(claims)
         .set({ status: to, updatedAt: now, ...(to === 'SUBMITTED' ? { submittedAt: now } : {}) })
         .where(eq(claims.id, claimId))
         .returning();
-      await tx.insert(claimEvents).values({
+      await t.insert(claimEvents).values({
         claimId,
         type: 'STATUS_CHANGED',
         fromStatus: current.status,
@@ -140,6 +147,7 @@ export class ClaimsService {
         data,
       });
       return updated;
-    });
+    };
+    return tx ? run(tx) : this.db.transaction(run);
   }
 }

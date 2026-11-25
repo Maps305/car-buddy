@@ -15,6 +15,13 @@
       "when": 1795633450745,
       "tag": "0001_session_choosing_vehicle",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1795634202968,
+      "tag": "0002_staff_portal",
+      "breakpoints": true
     }
   ]
 }

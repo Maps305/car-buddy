@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { Pool } from 'pg';
 import * as schema from '../src/db/schema';
+import { hashPassword } from '../src/staff/password';
 
 interface SeedCustomer {
   phone: string;
@@ -33,6 +34,28 @@ function assertNoDuplicates(seed: SeedCustomer[]) {
       if (owner && owner !== c.phone) throw new Error(`${key} is listed under both ${owner} and ${c.phone}`);
       seen.set(key, c.phone);
     }
+  }
+}
+
+interface SeedStaff {
+  name: string;
+  email: string;
+  role: 'PROCESSOR' | 'ASSESSOR' | 'ADMIN';
+}
+
+async function seedStaff(db: ReturnType<typeof drizzle<typeof schema>>) {
+  const file = resolve(process.env.DEMO_STAFF_FILE ?? './data/demo-staff.json');
+  const staff = JSON.parse(await readFile(file, 'utf8')) as SeedStaff[];
+  const password = process.env.SEED_STAFF_PASSWORD;
+  if (!password || password.length < 8) throw new Error('Set SEED_STAFF_PASSWORD (8+ characters) to seed staff accounts');
+  for (const s of staff) {
+    const email = s.email.trim().toLowerCase();
+    const passwordHash = await hashPassword(password);
+    await db
+      .insert(schema.staffUsers)
+      .values({ name: s.name, email, role: s.role, passwordHash })
+      .onConflictDoUpdate({ target: schema.staffUsers.email, set: { name: s.name, role: s.role, passwordHash, active: true } });
+    console.log(`Seeded staff ${s.name} <${email}> as ${s.role}`);
   }
 }
 
@@ -87,6 +110,7 @@ async function main() {
     }
   });
 
+  await seedStaff(db);
   await pool.end();
 }
 

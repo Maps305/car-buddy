@@ -1,0 +1,36 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/public-sans';
+
+@theme {
+  --font-sans: 'Public Sans Variable', ui-sans-serif, system-ui, sans-serif;
+  --color-ink: #123c4a;
+  --color-ink-soft: #2b5361;
+  --color-paper: #f6f7f5;
+  --color-line: #dde2df;
+  --color-slate: #56656c;
+  --color-amber: #e0a920;
+  --color-amber-soft: #fbf1d6;
+  --color-signal: #b93a26;
+  --color-signal-soft: #f7e3df;
+  --color-go: #2f7a57;
+  --color-go-soft: #e1efe7;
+}
+
+@layer base {
+  html {
+    font-feature-settings: 'tnum' 1;
+  }
+  body {
+    @apply bg-paper text-ink antialiased;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-amber);
+    outline-offset: 2px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * {
+      transition: none !important;
+      animation: none !important;
+    }
+  }
+}

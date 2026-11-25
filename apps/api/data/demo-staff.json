@@ -1,0 +1,5 @@
+[
+  { "name": "Chipo Mutasa", "email": "processor@carbuddy.test", "role": "PROCESSOR" },
+  { "name": "Tafadzwa Chikore", "email": "assessor@carbuddy.test", "role": "ASSESSOR" },
+  { "name": "Nyasha Gumbo", "email": "assessor2@carbuddy.test", "role": "ASSESSOR" }
+]

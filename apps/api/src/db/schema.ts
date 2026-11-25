@@ -1,6 +1,7 @@
 import {
   boolean,
   date,
+  numeric,
   index,
   integer,
   jsonb,
@@ -179,3 +180,57 @@ export const processedMessages = pgTable('processed_messages', {
   messageId: text('message_id').primaryKey(),
   receivedAt: timestamp('received_at', { withTimezone: true }).defaultNow().notNull(),
 });
+
+export const staffRole = pgEnum('staff_role', ['PROCESSOR', 'ASSESSOR', 'ADMIN']);
+export type StaffRole = (typeof staffRole.enumValues)[number];
+
+export const staffUsers = pgTable('staff_users', {
+  id: id(),
+  name: text('name').notNull(),
+  email: text('email').notNull().unique(),
+  role: staffRole('role').notNull(),
+  passwordHash: text('password_hash').notNull(),
+  active: boolean('active').notNull().default(true),
+  createdAt: createdAt(),
+});
+
+export const claimAssignments = pgTable(
+  'claim_assignments',
+  {
+    id: id(),
+    claimId: uuid('claim_id')
+      .notNull()
+      .references(() => claims.id),
+    assessorId: uuid('assessor_id')
+      .notNull()
+      .references(() => staffUsers.id),
+    assignedBy: uuid('assigned_by')
+      .notNull()
+      .references(() => staffUsers.id),
+    active: boolean('active').notNull().default(true),
+    createdAt: createdAt(),
+  },
+  (t) => [index('claim_assignments_claim_idx').on(t.claimId), index('claim_assignments_assessor_idx').on(t.assessorId)],
+);
+
+export const assessmentRecommendation = pgEnum('assessment_recommendation', ['APPROVE', 'REJECT', 'MORE_INFO']);
+
+export const claimAssessments = pgTable(
+  'claim_assessments',
+  {
+    id: id(),
+    claimId: uuid('claim_id')
+      .notNull()
+      .references(() => claims.id),
+    assessorId: uuid('assessor_id')
+      .notNull()
+      .references(() => staffUsers.id),
+    findings: text('findings').notNull(),
+    damageDescription: text('damage_description'),
+    estimatedCost: numeric('estimated_cost', { precision: 12, scale: 2 }),
+    currency: text('currency').notNull().default('USD'),
+    recommendation: assessmentRecommendation('recommendation').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index('claim_assessments_claim_idx').on(t.claimId)],
+);

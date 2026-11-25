@@ -27,6 +27,11 @@ const CUSTOMER_SIDE: Partial<Record<ClaimStatus, readonly ClaimStatus[]>> = {
   ADDITIONAL_INFO_REQUIRED: ['UNDER_REVIEW'],
 };
 
+const SYSTEM_SIDE: Partial<Record<ClaimStatus, readonly ClaimStatus[]>> = {
+  DRAFT: ['CLOSED'],
+  ASSESSMENT_COMPLETED: ['AWAITING_DECISION'],
+};
+
 export class InvalidTransitionError extends Error {
   constructor(from: ClaimStatus, to: ClaimStatus, actor: Actor) {
     super(`${actor.type} cannot move a claim from ${from} to ${to}`);
@@ -36,5 +41,6 @@ export class InvalidTransitionError extends Error {
 export function canTransition(from: ClaimStatus, to: ClaimStatus, actor: Actor): boolean {
   if (!TRANSITIONS[from].includes(to)) return false;
   if (actor.type === 'STAFF') return true;
-  return CUSTOMER_SIDE[from]?.includes(to) ?? false;
+  const side = actor.type === 'SYSTEM' ? SYSTEM_SIDE : CUSTOMER_SIDE;
+  return side[from]?.includes(to) ?? false;
 }
