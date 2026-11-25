@@ -2,7 +2,7 @@
 
 ## Project Plan and Hackathon Implementation Guide
 
-**Hackathon submission:** 25 November 2026\
+**Hackathon submission:** 
 **Working concept:** An AI-powered car buddy for insurance claims,
 vehicle advice and maintenance support\
 **Customer channel:** WhatsApp\
