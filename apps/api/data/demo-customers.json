@@ -5,6 +5,34 @@
     "surname": "Moyo",
     "policyNumber": "MVH-TEST-0001",
     "coverType": "COMPREHENSIVE",
-    "vehicles": [{ "registration": "AEX 1234", "make": "Toyota", "model": "Fielder", "year": 2012 }]
+    "vehicles": [
+      {
+        "registration": "AEX 1234",
+        "make": "Toyota",
+        "model": "Fielder",
+        "year": 2012,
+        "odometerKm": 94000,
+        "lastServiceKm": 90000,
+        "serviceIntervalKm": 10000
+      }
+    ]
+  },
+  {
+    "phone": "263772295466",
+    "firstName": "Sithembinkosi",
+    "surname": "Mampengesi",
+    "policyNumber": "MVH-TEST-0002",
+    "coverType": "COMPREHENSIVE",
+    "vehicles": [
+      {
+        "registration": "AFM 2033",
+        "make": "Toyota",
+        "model": "Hiace",
+        "year": 2016,
+        "odometerKm": 175000,
+        "lastServiceKm": 169000,
+        "serviceIntervalKm": 10000
+      }
+    ]
   }
 ]

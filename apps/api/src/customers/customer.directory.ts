@@ -1,38 +1,61 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { Inject, Injectable } from '@nestjs/common';
+import { and, desc, eq } from 'drizzle-orm';
+import { DB, type Database } from '../db/db.module';
+import { customers, policies, vehicles } from '../db/schema';
 
 export interface InsuredVehicle {
+  id: string;
   registration: string;
   make: string;
   model: string;
-  year?: number;
+  year: number | null;
 }
 
 export interface Customer {
+  id: string;
   phone: string;
   firstName: string;
   surname: string;
-  policyNumber: string;
-  coverType: 'COMPREHENSIVE' | 'FULL_THIRD_PARTY' | 'THIRD_PARTY';
+  policy: { id: string; policyNumber: string; coverType: 'COMPREHENSIVE' | 'FULL_THIRD_PARTY' | 'THIRD_PARTY' };
   vehicles: InsuredVehicle[];
 }
 
 const digits = (phone: string) => phone.replace(/\D/g, '');
 
 @Injectable()
-export class CustomerDirectory implements OnModuleInit {
-  private readonly logger = new Logger(CustomerDirectory.name);
-  private customers = new Map<string, Customer>();
+export class CustomerDirectory {
+  constructor(@Inject(DB) private readonly db: Database) {}
 
-  async onModuleInit(): Promise<void> {
-    const file = resolve(process.env.DEMO_CUSTOMERS_FILE ?? './data/demo-customers.json');
-    const list = JSON.parse(await readFile(file, 'utf8')) as Customer[];
-    this.customers = new Map(list.map((c) => [digits(c.phone), c]));
-    this.logger.log(`Loaded ${list.length} demo customers from ${file}`);
-  }
+  async findByPhone(phone: string): Promise<Customer | undefined> {
+    const [customer] = await this.db.select().from(customers).where(eq(customers.phone, digits(phone))).limit(1);
+    if (!customer) return undefined;
 
-  findByPhone(phone: string): Customer | undefined {
-    return this.customers.get(digits(phone));
+    const [policy] = await this.db
+      .select()
+      .from(policies)
+      .where(and(eq(policies.customerId, customer.id), eq(policies.active, true)))
+      .orderBy(desc(policies.createdAt))
+      .limit(1);
+    if (!policy) return undefined;
+
+    const insured = await this.db
+      .select({
+        id: vehicles.id,
+        registration: vehicles.registration,
+        make: vehicles.make,
+        model: vehicles.model,
+        year: vehicles.year,
+      })
+      .from(vehicles)
+      .where(eq(vehicles.policyId, policy.id));
+
+    return {
+      id: customer.id,
+      phone: customer.phone,
+      firstName: customer.firstName,
+      surname: customer.surname,
+      policy: { id: policy.id, policyNumber: policy.policyNumber, coverType: policy.coverType },
+      vehicles: insured,
+    };
   }
 }

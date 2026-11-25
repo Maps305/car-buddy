@@ -54,6 +54,11 @@ export class WebhookController {
       throw new UnauthorizedException();
     }
     const messages = parseWebhook(payload);
+    const fields = (payload.entry ?? []).flatMap((e) => (e.changes ?? []).map((c) => c.field));
+    const summary = messages
+      .map((m) => `${m.from}:${m.media?.kind ?? m.unsupportedType ?? (m.buttonId ? 'button' : 'text')}`)
+      .join(' ');
+    this.logger.log(`Webhook received: object=${payload.object} fields=[${fields.join(',')}] messages=${messages.length} ${summary}`);
     if (messages.length) {
       const work = this.conversation
         .enqueue(messages)

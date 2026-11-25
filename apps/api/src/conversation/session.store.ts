@@ -1,52 +1,71 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
+import { eq, lt } from 'drizzle-orm';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
-import type { PoliceReportResult } from '../extraction/extraction.service';
-import type { StoredMedia } from '../media/media.store';
+import { DB, type Database } from '../db/db.module';
+import { conversationSessions, processedMessages, sessionState } from '../db/schema';
 
-export type SessionState = 'IDLE' | 'AWAITING_POLICE_REPORT' | 'CONFIRMING_POLICE_REPORT';
-
-export interface ClaimDraft {
-  reference: string;
-  vehicleRegistration: string;
-  startedAt: string;
-  policeReport?: { media: StoredMedia; result: PoliceReportResult; confirmedAt?: string };
-}
+export type SessionState = (typeof sessionState.enumValues)[number];
 
 export interface Session {
   phone: string;
+  customerId: string | null;
   state: SessionState;
-  claim?: ClaimDraft;
+  activeClaimId: string | null;
   history: ChatCompletionMessageParam[];
-  updatedAt: number;
 }
 
 const MAX_HISTORY = 12;
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
-const SEEN_TTL_MS = 60 * 60 * 1000;
+const PROCESSED_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+const PRUNE_EVERY = 200;
 
 @Injectable()
 export class SessionStore {
-  private readonly sessions = new Map<string, Session>();
-  private readonly seen = new Map<string, number>();
+  private sightings = 0;
 
-  get(phone: string): Session {
-    const existing = this.sessions.get(phone);
-    if (existing && Date.now() - existing.updatedAt < SESSION_TTL_MS) return existing;
-    const fresh: Session = { phone, state: 'IDLE', history: [], updatedAt: Date.now() };
-    this.sessions.set(phone, fresh);
-    return fresh;
+  constructor(@Inject(DB) private readonly db: Database) {}
+
+  async get(phone: string): Promise<Session> {
+    const [row] = await this.db
+      .insert(conversationSessions)
+      .values({ phone })
+      .onConflictDoUpdate({ target: conversationSessions.phone, set: { phone } })
+      .returning();
+
+    const expired = Date.now() - row.updatedAt.getTime() > SESSION_TTL_MS;
+    return {
+      phone,
+      customerId: row.customerId,
+      state: expired ? 'IDLE' : row.state,
+      activeClaimId: expired ? null : row.activeClaimId,
+      history: expired ? [] : (row.history as ChatCompletionMessageParam[]),
+    };
   }
 
-  touch(session: Session): void {
-    session.updatedAt = Date.now();
-    if (session.history.length > MAX_HISTORY) session.history.splice(0, session.history.length - MAX_HISTORY);
+  async save(session: Session): Promise<void> {
+    await this.db
+      .update(conversationSessions)
+      .set({
+        customerId: session.customerId,
+        state: session.state,
+        activeClaimId: session.activeClaimId,
+        history: session.history.slice(-MAX_HISTORY),
+        updatedAt: new Date(),
+      })
+      .where(eq(conversationSessions.phone, session.phone));
   }
 
-  firstSighting(messageId: string): boolean {
-    const now = Date.now();
-    for (const [id, at] of this.seen) if (now - at > SEEN_TTL_MS) this.seen.delete(id);
-    if (this.seen.has(messageId)) return false;
-    this.seen.set(messageId, now);
-    return true;
+  async firstSighting(messageId: string): Promise<boolean> {
+    if (++this.sightings % PRUNE_EVERY === 0) {
+      await this.db
+        .delete(processedMessages)
+        .where(lt(processedMessages.receivedAt, new Date(Date.now() - PROCESSED_RETENTION_MS)));
+    }
+    const inserted = await this.db
+      .insert(processedMessages)
+      .values({ messageId })
+      .onConflictDoNothing()
+      .returning({ messageId: processedMessages.messageId });
+    return inserted.length > 0;
   }
 }
