@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { ClaimStatement, STATEMENT_DOC_TYPES } from '@/components/claim-statement';
 import { PoliceReportEvidence } from '@/components/evidence';
 import { InfoRequests, buildThread } from '@/components/info-requests';
 import { AppHeader, Panel, Plate, StatusBadge, StatusTrack } from '@/components/ui';
@@ -11,6 +12,13 @@ import { ActionPanel } from './action-panel';
 
 const RECOMMENDATION = { APPROVE: 'Approve', REJECT: 'Reject', MORE_INFO: 'Need more information' } as const;
 
+const DOC_RECEIVED: Record<string, string> = {
+  DRIVER_LICENCE: 'Driver’s licence photo received',
+  ID_COPY: 'ID photo received',
+  SKETCH: 'Sketch received',
+  DAMAGE_PHOTO: 'Damage photo received',
+};
+
 function eventText(e: ClaimEvent): string {
   const d = e.data ?? {};
   switch (e.type) {
@@ -18,6 +26,7 @@ function eventText(e: ClaimEvent): string {
       return 'Claim opened on WhatsApp';
     case 'DOCUMENT_ADDED':
       if (d.documentType === 'OTHER' && e.actorType === 'CUSTOMER') return 'Customer sent a file';
+      if (typeof d.documentType === 'string' && DOC_RECEIVED[d.documentType]) return DOC_RECEIVED[d.documentType];
       return `Document received${d.needsHumanReview ? ', flagged for checking' : ''}`;
     case 'CUSTOMER_REPLY': {
       const text = typeof d.text === 'string' ? d.text : '';
@@ -27,6 +36,10 @@ function eventText(e: ClaimEvent): string {
       return 'WhatsApp message sent to the customer';
     case 'CUSTOMER_NOTIFY_FAILED':
       return `WhatsApp message not delivered: ${typeof d.reason === 'string' ? d.reason : 'unknown error'}`;
+    case 'SKETCH_SKIPPED':
+      return 'Customer skipped the sketch';
+    case 'DECLARATION_ACCEPTED':
+      return 'Customer accepted the declaration';
     case 'DOCUMENT_CONFIRMED':
       return 'Customer confirmed the police report details';
     case 'STATUS_CHANGED': {
@@ -87,7 +100,8 @@ export default async function ClaimPage({ params }: { params: Promise<{ id: stri
   const askedFrom = events.findLast((e) => e.toStatus === 'ADDITIONAL_INFO_REQUIRED')?.fromStatus;
   const stage = claim.status === 'ADDITIONAL_INFO_REQUIRED' && askedFrom ? askedFrom : claim.status;
   const inThread = new Set(thread.flatMap((i) => (i.kind === 'file' ? [i.doc.id] : [])));
-  const otherDocs = documents.filter((d) => d !== policeReport && !inThread.has(d.id));
+  const otherDocs = documents.filter((d) => d !== policeReport && !inThread.has(d.id) && !STATEMENT_DOC_TYPES.has(d.type));
+  const hasStatement = Boolean(claim.intake.declaredAt) || documents.some((d) => STATEMENT_DOC_TYPES.has(d.type));
 
   return (
     <>
@@ -121,6 +135,19 @@ export default async function ClaimPage({ params }: { params: Promise<{ id: stri
                 <p className="text-slate">No police report has been received yet.</p>
               )}
             </Panel>
+
+            {hasStatement && (
+              <Panel
+                title="Customer statement"
+                aside={
+                  <Link href={`/claims/${claim.id}/form`} className="text-sm font-medium underline underline-offset-4">
+                    Claim form
+                  </Link>
+                }
+              >
+                <ClaimStatement claimId={claim.id} intake={claim.intake} description={claim.description} documents={documents} />
+              </Panel>
+            )}
 
             {thread.length > 0 && (
               <Panel

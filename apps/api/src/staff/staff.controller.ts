@@ -54,8 +54,10 @@ export class StaffController {
   }
 
   @Get('claims/:id')
-  detail(@CurrentStaff() staff: StaffPrincipal, @Param('id', ParseUUIDPipe) id: string) {
-    return this.claims.detail(staff, id);
+  async detail(@CurrentStaff() staff: StaffPrincipal, @Param('id', ParseUUIDPipe) id: string) {
+    const detail = await this.claims.detail(staff, id);
+    await this.claims.markSeen(staff, id);
+    return detail;
   }
 
   @Get('claims/:id/documents/:documentId/file')

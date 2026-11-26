@@ -1,8 +1,8 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { and, count, desc, eq, gt, inArray } from 'drizzle-orm';
+import { and, count, desc, eq, gt, inArray, sql } from 'drizzle-orm';
 import { randomBytes } from 'node:crypto';
 import { DB, type Database } from '../db/db.module';
-import { claimDocuments, claimEvents, claims, type ClaimStatus } from '../db/schema';
+import { claimDocuments, claimEvents, claims, type ClaimIntake, type ClaimStatus } from '../db/schema';
 import { canTransition, INFO_RETURN_STATUSES, InvalidTransitionError, type Actor } from './claim-transitions';
 
 export type Claim = typeof claims.$inferSelect;
@@ -78,12 +78,15 @@ export class ClaimsService {
   }
 
   async addCustomerReply(claimId: string, text: string, actor: Actor): Promise<void> {
-    await this.db.insert(claimEvents).values({
-      claimId,
-      type: 'CUSTOMER_REPLY',
-      actorType: actor.type,
-      actorId: actor.id,
-      data: { text: text.slice(0, 4000) },
+    await this.db.transaction(async (tx) => {
+      await tx.insert(claimEvents).values({
+        claimId,
+        type: 'CUSTOMER_REPLY',
+        actorType: actor.type,
+        actorId: actor.id,
+        data: { text: text.slice(0, 4000) },
+      });
+      await tx.update(claims).set({ updatedAt: new Date() }).where(eq(claims.id, claimId));
     });
   }
 
@@ -130,6 +133,7 @@ export class ClaimsService {
         actorId: actor.id,
         data: { documentId: row.id, documentType: row.type, needsHumanReview: row.needsHumanReview },
       });
+      await tx.update(claims).set({ updatedAt: new Date() }).where(eq(claims.id, claimId));
       return row;
     });
   }
@@ -170,6 +174,29 @@ export class ClaimsService {
       .update(claims)
       .set({ ...details, updatedAt: new Date() })
       .where(and(eq(claims.id, claimId), eq(claims.status, 'DRAFT')));
+  }
+
+  async updateIntake(claimId: string, patch: ClaimIntake): Promise<ClaimIntake> {
+    const [row] = await this.db
+      .update(claims)
+      .set({ intake: sql`${claims.intake} || ${JSON.stringify(patch)}::jsonb`, updatedAt: new Date() })
+      .where(and(eq(claims.id, claimId), eq(claims.status, 'DRAFT')))
+      .returning({ intake: claims.intake });
+    if (!row) throw new NotFoundException(`Draft claim ${claimId} not found`);
+    return row.intake;
+  }
+
+  async documentCounts(claimId: string): Promise<Partial<Record<ClaimDocument['type'], number>>> {
+    const rows = await this.db
+      .select({ type: claimDocuments.type, n: count() })
+      .from(claimDocuments)
+      .where(eq(claimDocuments.claimId, claimId))
+      .groupBy(claimDocuments.type);
+    return Object.fromEntries(rows.map((r) => [r.type, r.n]));
+  }
+
+  async recordEvent(claimId: string, type: string, actor: Actor, data?: Record<string, unknown>): Promise<void> {
+    await this.db.insert(claimEvents).values({ claimId, type, actorType: actor.type, actorId: actor.id, data });
   }
 
   async transition(

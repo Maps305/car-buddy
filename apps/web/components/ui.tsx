@@ -37,8 +37,8 @@ export function AppHeader({ user }: { user: StaffUser }) {
   return (
     <header className="border-b border-line bg-white">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-6 py-3">
-        <Link href="/claims" className="font-semibold">
-          Car Buddy claims desk
+        <Link href="/claims" className="font-display font-semibold text-navy">
+          Car Buddy <span className="font-sans font-normal text-slate">claims desk</span>
         </Link>
         <div className="flex items-center gap-4 text-sm">
           <span className="text-slate">

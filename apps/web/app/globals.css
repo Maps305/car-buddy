@@ -1,17 +1,24 @@
 @import 'tailwindcss';
 @import '@fontsource-variable/public-sans';
+@import '@fontsource/poppins/600.css';
+@import '@fontsource/poppins/700.css';
 
 @theme {
   --font-sans: 'Public Sans Variable', ui-sans-serif, system-ui, sans-serif;
-  --color-ink: #123c4a;
-  --color-ink-soft: #2b5361;
-  --color-paper: #f6f7f5;
-  --color-line: #dde2df;
-  --color-slate: #56656c;
+  --font-display: 'Poppins', 'Public Sans Variable', ui-sans-serif, sans-serif;
+  --color-ink: #0f2552;
+  --color-ink-soft: #13377e;
+  --color-navy: #13377e;
+  --color-navy-deep: #0b2559;
+  --color-paper: #f3f5f9;
+  --color-line: #dbe2ee;
+  --color-slate: #56637a;
+  --color-chat: #e7eef8;
+  --color-chat-out: #d9fdd3;
   --color-amber: #e0a920;
   --color-amber-soft: #fbf1d6;
-  --color-signal: #b93a26;
-  --color-signal-soft: #f7e3df;
+  --color-signal: #cb3026;
+  --color-signal-soft: #fae4e2;
   --color-go: #2f7a57;
   --color-go-soft: #e1efe7;
 }
@@ -27,10 +34,26 @@
     outline: 2px solid var(--color-amber);
     outline-offset: 2px;
   }
+  @media print {
+    body {
+      background: white;
+    }
+    @page {
+      size: A4;
+      margin: 12mm;
+    }
+  }
   @media (prefers-reduced-motion: reduce) {
     * {
       transition: none !important;
       animation: none !important;
     }
+  }
+}
+
+@keyframes bubble-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
   }
 }

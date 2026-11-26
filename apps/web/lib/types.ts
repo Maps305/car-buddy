@@ -45,6 +45,20 @@ export interface QueueItem {
   vehicle: string;
   assessorName: string | null;
   needsHumanReview: boolean;
+  sketchSkipped: boolean;
+  unread: boolean;
+  quotes: number;
+}
+
+export interface QuotationExtraction {
+  isQuotation: boolean;
+  reason: string;
+  supplier: Field<string>;
+  quoteDate: Field<string>;
+  currency: Field<string>;
+  total: Field<number>;
+  vehicleRegistration: Field<string>;
+  lineItems: { description: string; amount: number | null }[];
 }
 
 export interface Field<T = string | boolean> {
@@ -139,6 +153,19 @@ export interface ClaimEvent {
   createdAt: string;
 }
 
+export interface ClaimIntake {
+  driver?: 'INSURED' | 'OTHER';
+  driverName?: string;
+  driverPhone?: string;
+  speedKmh?: number;
+  weather?: string;
+  description?: string;
+  sketchSkipped?: boolean;
+  quotesDone?: boolean;
+  quotesLater?: boolean;
+  declaredAt?: string;
+}
+
 export interface ClaimDetail {
   claim: {
     id: string;
@@ -147,6 +174,8 @@ export interface ClaimDetail {
     accidentDate: string | null;
     accidentTime: string | null;
     accidentPlace: string | null;
+    description: string | null;
+    intake: ClaimIntake;
     submittedAt: string | null;
     createdAt: string;
   };

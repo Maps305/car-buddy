@@ -7,6 +7,7 @@ import {
   jsonb,
   pgEnum,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uuid,
@@ -41,8 +42,25 @@ export const documentType = pgEnum('document_type', [
   'ID_COPY',
   'QUOTATION',
   'DAMAGE_PHOTO',
+  'SKETCH',
   'OTHER',
 ]);
+
+export interface ClaimIntake {
+  driver?: 'INSURED' | 'OTHER';
+  driverName?: string;
+  driverPhone?: string;
+  reportDriverName?: string;
+  reportDriverPhone?: string;
+  speedKmh?: number;
+  weather?: string;
+  description?: string;
+  sketchSkipped?: boolean;
+  damageDone?: boolean;
+  quotesDone?: boolean;
+  quotesLater?: boolean;
+  declaredAt?: string;
+}
 
 export const actorType = pgEnum('actor_type', ['CUSTOMER', 'AGENT', 'STAFF', 'SYSTEM']);
 
@@ -51,6 +69,7 @@ export const sessionState = pgEnum('session_state', [
   'CHOOSING_VEHICLE',
   'AWAITING_POLICE_REPORT',
   'CONFIRMING_POLICE_REPORT',
+  'COLLECTING_DETAILS',
 ]);
 
 export const customers = pgTable('customers', {
@@ -119,6 +138,7 @@ export const claims = pgTable(
     accidentTime: text('accident_time'),
     accidentPlace: text('accident_place'),
     description: text('description'),
+    intake: jsonb('intake').$type<ClaimIntake>().notNull().default({}),
     submittedAt: timestamp('submitted_at', { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -233,4 +253,18 @@ export const claimAssessments = pgTable(
     createdAt: createdAt(),
   },
   (t) => [index('claim_assessments_claim_idx').on(t.claimId)],
+);
+
+export const claimViews = pgTable(
+  'claim_views',
+  {
+    staffId: uuid('staff_id')
+      .notNull()
+      .references(() => staffUsers.id),
+    claimId: uuid('claim_id')
+      .notNull()
+      .references(() => claims.id),
+    seenAt: timestamp('seen_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.staffId, t.claimId] })],
 );

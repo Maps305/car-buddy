@@ -19,6 +19,7 @@ import {
   claimAssignments,
   claimDocuments,
   claimEvents,
+  claimViews,
   claims,
   customers,
   policies,
@@ -97,7 +98,21 @@ export class StaffClaimsService {
         registration: vehicles.registration,
         vehicle: sql<string>`${vehicles.make} || ' ' || ${vehicles.model}`,
         assessorName: assessor.name,
-        needsHumanReview: sql<boolean>`exists (select 1 from ${claimDocuments} d where d.claim_id = ${claims.id} and d.needs_human_review)`,
+        needsHumanReview: sql<boolean>`exists (select 1 from ${claimDocuments} d where d.claim_id = ${claims.id} and d.type = 'POLICE_REPORT' and d.needs_human_review)`,
+        quotes: sql<number>`(select count(*)::int from ${claimDocuments} d where d.claim_id = ${claims.id} and d.type = 'QUOTATION')`,
+        sketchSkipped: sql<boolean>`coalesce((${claims.intake}->>'sketchSkipped')::boolean, false)`,
+        unread: sql<boolean>`exists (
+          select 1 from ${claimEvents} e
+          where e.claim_id = ${claims.id}
+            and e.actor_type = 'CUSTOMER'
+            and e.type in ('CUSTOMER_REPLY', 'DOCUMENT_ADDED', 'STATUS_CHANGED')
+            and e.to_status is distinct from 'SUBMITTED'
+            and e.created_at > ${claims.submittedAt}
+            and e.created_at > coalesce(
+              (select v.seen_at from ${claimViews} v where v.claim_id = ${claims.id} and v.staff_id = ${staff.id}),
+              '-infinity'::timestamptz
+            )
+        )`,
       })
       .from(claims)
       .innerJoin(customers, eq(customers.id, claims.customerId))
@@ -180,6 +195,13 @@ export class StaffClaimsService {
       assessment: assessment ?? null,
       allowedActions: this.allowedActions(staff, row.claim.status, assignment?.assessorId === staff.id),
     };
+  }
+
+  async markSeen(staff: StaffPrincipal, claimId: string) {
+    await this.db
+      .insert(claimViews)
+      .values({ staffId: staff.id, claimId })
+      .onConflictDoUpdate({ target: [claimViews.staffId, claimViews.claimId], set: { seenAt: sql`now()` } });
   }
 
   async assessors() {

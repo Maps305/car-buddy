@@ -30,6 +30,8 @@ const ASSESSOR_TABS: Tab[] = [
   },
 ];
 
+const DECIDED: ClaimStatus[] = ['APPROVED', 'REJECTED', 'PAYMENT_PENDING', 'CLOSED'];
+
 const EMPTY: Record<string, string> = {
   new: 'No new claims. Claims appear here once a customer confirms their police report on WhatsApp.',
   review: 'Nothing in review. Start a review from the New tab.',
@@ -90,13 +92,24 @@ export default async function ClaimsPage({ searchParams }: { searchParams: Promi
               </thead>
               <tbody>
                 {claims.map((c) => (
-                  <tr key={c.id} className="border-b border-line last:border-0 hover:bg-paper">
+                  <tr key={c.id} className={`border-b border-line last:border-0 hover:bg-paper ${c.unread ? 'bg-signal-soft/40' : ''}`}>
                     <td className="px-4 py-3">
-                      <Link href={`/claims/${c.id}`} className="font-semibold underline-offset-4 hover:underline">
-                        {c.reference}
-                      </Link>
+                      <span className="flex items-center gap-2">
+                        {c.unread && <span className="size-2 shrink-0 rounded-full bg-signal" aria-hidden="true" />}
+                        <Link
+                          href={`/claims/${c.id}`}
+                          className={`underline-offset-4 hover:underline ${c.unread ? 'font-bold' : 'font-semibold'}`}
+                        >
+                          {c.reference}
+                        </Link>
+                      </span>
+                      {c.unread && <span className="mt-1 block text-xs font-semibold text-signal">New reply from customer</span>}
                       {c.needsHumanReview && (
                         <span className="mt-1 block text-xs font-medium text-[#7a5a05]">Police report needs checking</span>
+                      )}
+                      {c.sketchSkipped && <span className="mt-1 block text-xs font-medium text-[#7a5a05]">No sketch</span>}
+                      {c.quotes < 3 && !DECIDED.includes(c.status) && (
+                        <span className="mt-1 block text-xs font-medium text-[#7a5a05]">Quotes {c.quotes} of 3</span>
                       )}
                     </td>
                     <td className="px-4 py-3">{c.customerName}</td>

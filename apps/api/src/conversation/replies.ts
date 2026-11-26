@@ -71,9 +71,13 @@ export function policeReportSummary(result: Pick<PoliceReportResult, 'extraction
 }
 
 export function policeReportConfirmed(reference: string): string {
+  return `Thanks. Your police report is saved to claim *${reference}*. A few more questions and photos to complete the claim; it takes about 5 minutes.`;
+}
+
+export function claimSubmitted(reference: string): string {
   return [
-    `Thanks. Your police report is saved to claim *${reference}*.`,
-    'A Moovah claims processor will review it. I will message you here when there is an update.',
+    `Thanks. Claim *${reference}* is submitted to Moovah.`,
+    'A claims processor will review it. I will message you here when there is an update.',
   ].join('\n');
 }
 
@@ -88,9 +92,15 @@ export function chooseVehicle(customer: Customer): string {
   return lines.join('\n');
 }
 
-export function claimResume(reference: string, registration: string, waitingFor: 'POLICE_REPORT' | 'CONFIRMATION'): string {
+export function claimResume(
+  reference: string,
+  registration: string,
+  waitingFor: 'POLICE_REPORT' | 'CONFIRMATION' | 'DETAILS',
+): string {
   const next =
-    waitingFor === 'CONFIRMATION'
+    waitingFor === 'DETAILS'
+      ? "Let's carry on where we left off."
+      : waitingFor === 'CONFIRMATION'
       ? 'Please confirm the police report details I sent, or tap *Send again* to send a new photo.'
       : [
           'I still need a photo of the *Moovah Motor Accident Police Report*, completed and stamped by the police. Send it whenever you have it.',

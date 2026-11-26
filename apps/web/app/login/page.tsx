@@ -8,10 +8,10 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
 
   return (
     <main className="grid min-h-screen lg:grid-cols-[1.1fr_1fr]">
-      <section className="hidden flex-col justify-between bg-ink p-12 text-white lg:flex">
-        <p className="text-lg font-semibold">Car Buddy claims desk</p>
+      <section className="hidden flex-col justify-between bg-navy p-12 text-white lg:flex">
+        <p className="font-display text-lg font-semibold">Car Buddy claims desk</p>
         <div className="max-w-md">
-          <p className="text-4xl leading-tight font-semibold tracking-tight">
+          <p className="font-display text-4xl leading-tight font-semibold tracking-tight">
             Claims arrive from WhatsApp with the police report already read.
           </p>
           <p className="mt-5 text-lg leading-relaxed text-white/75">
