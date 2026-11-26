@@ -1,8 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { ChatCompletionContentPart } from 'openai/resources/chat/completions';
-import { CaimexService } from '../caimex/caimex.service';
+import { CaimexService, describeCaimexError } from '../caimex/caimex.service';
 import type { Actor } from '../claims/claim-transitions';
-import { ClaimsService } from '../claims/claims.service';
+import { ClaimsService, type Claim } from '../claims/claims.service';
 import { CustomerDirectory, type Customer, type InsuredVehicle } from '../customers/customer.directory';
 import { ExtractionService, type PoliceReportResult } from '../extraction/extraction.service';
 import { MediaStore } from '../media/media.store';
@@ -13,6 +13,8 @@ import {
   chooseVehicle,
   claimResume,
   claimStarted,
+  infoReplyAdded,
+  infoReplySent,
   policeReportConfirmed,
   policeReportSummary,
 } from './replies';
@@ -29,6 +31,9 @@ const isClaimStart = (text: string) => {
 const CANCEL_INTENT = /^\s*(cancel|stop|start over)\s*$/i;
 const EXTRACTABLE = /^(image\/(jpeg|png|webp)|application\/pdf)/;
 const VEHICLE_BUTTON = 'vehicle:';
+const INFO_DONE_BUTTON = 'info_done:';
+const DONE_TEXT = /^\s*done\s*[.!]*\s*$/i;
+const INFO_ACK_GAP_MS = 15_000;
 const normalisePlate = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, '');
 
 const BUTTONS = {
@@ -78,6 +83,7 @@ Rules:
 export class ConversationService {
   private readonly logger = new Logger(ConversationService.name);
   private readonly queues = new Map<string, Promise<void>>();
+  private readonly infoAcks = new Map<string, number>();
 
   constructor(
     private readonly whatsapp: WhatsappClient,
@@ -162,6 +168,16 @@ export class ConversationService {
       session.state = 'AWAITING_POLICE_REPORT';
       await this.whatsapp.sendText(msg.from, 'No problem. Please send the police report photo again.');
       return;
+    }
+
+    if (msg.buttonId?.startsWith(INFO_DONE_BUTTON)) {
+      await this.finishInfoReply(customer, msg.buttonId.slice(INFO_DONE_BUTTON.length), msg.from);
+      return;
+    }
+
+    if (session.state === 'IDLE' && !(msg.text && !msg.media && isClaimStart(msg.text))) {
+      const awaiting = await this.claims.findAwaitingInfo(customer.id);
+      if (awaiting && (await this.handleInfoReply(customer, awaiting, msg))) return;
     }
 
     if (session.state === 'CHOOSING_VEHICLE') {
@@ -322,6 +338,76 @@ export class ConversationService {
     await this.whatsapp.sendText(to, policeReportConfirmed(claim.reference));
   }
 
+  private async handleInfoReply(customer: Customer, claim: Claim, msg: InboundMessage): Promise<boolean> {
+    const actor: Actor = { type: 'CUSTOMER', id: customer.id };
+
+    if (msg.media) {
+      if (msg.media.kind === 'audio') return false;
+      if (!EXTRACTABLE.test(msg.media.mimeType)) {
+        await this.whatsapp.sendText(msg.from, 'Please send photos (JPG or PNG) or PDFs.');
+        return true;
+      }
+      const downloaded = await this.whatsapp.downloadMedia(msg.media.id);
+      const stored = await this.media.save(downloaded.data, downloaded.mimeType, `claims/${claim.reference}/info`);
+      await this.claims.addDocument(
+        claim.id,
+        {
+          type: 'OTHER',
+          storageKey: stored.key,
+          mimeType: stored.mimeType,
+          bytes: stored.bytes,
+          sha256: stored.sha256,
+          whatsappMediaId: msg.media.id,
+        },
+        actor,
+      );
+      const caption = msg.media.caption?.trim();
+      if (caption) await this.claims.addCustomerReply(claim.id, caption, actor);
+    } else if (msg.location) {
+      const { latitude, longitude, name, address } = msg.location;
+      const place = [name, address].filter(Boolean).join(', ');
+      await this.claims.addCustomerReply(
+        claim.id,
+        `Shared a location: ${place ? `${place} ` : ''}(${latitude}, ${longitude})`,
+        actor,
+      );
+    } else if (msg.text?.trim()) {
+      if (DONE_TEXT.test(msg.text)) {
+        await this.finishInfoReply(customer, claim.id, msg.from);
+        return true;
+      }
+      await this.claims.addCustomerReply(claim.id, msg.text.trim(), actor);
+    } else {
+      return false;
+    }
+
+    const last = this.infoAcks.get(msg.from) ?? 0;
+    if (Date.now() - last >= INFO_ACK_GAP_MS) {
+      this.infoAcks.set(msg.from, Date.now());
+      await this.whatsapp.sendButtons(msg.from, infoReplyAdded(claim.reference), [
+        { id: `${INFO_DONE_BUTTON}${claim.id}`, title: 'Done' },
+      ]);
+    }
+    return true;
+  }
+
+  private async finishInfoReply(customer: Customer, claimId: string, to: string): Promise<void> {
+    const claim = await this.claims.get(claimId).catch(() => undefined);
+    if (!claim || claim.customerId !== customer.id || claim.status !== 'ADDITIONAL_INFO_REQUIRED') {
+      await this.whatsapp.sendText(to, "That request is already with the claims team. I'll message you here if Moovah needs anything else.");
+      return;
+    }
+    if ((await this.claims.repliesSinceInfoRequest(claim.id)) === 0) {
+      await this.whatsapp.sendText(to, 'Please send the information Moovah asked for first, then reply *done*.');
+      return;
+    }
+    await this.claims.resumeAfterInfo(claim.id, { type: 'CUSTOMER', id: customer.id }, {
+      reason: 'Customer sent the requested information',
+    });
+    this.infoAcks.delete(to);
+    await this.whatsapp.sendText(to, infoReplySent(claim.reference));
+  }
+
   private async handlePoliceReport(session: Session, customer: Customer, msg: InboundMessage): Promise<void> {
     const media = msg.media!;
     const claim = await this.claims.get(session.activeClaimId!);
@@ -342,10 +428,10 @@ export class ConversationService {
         { insuredRegistration: vehicle?.registration ?? '', insuredPolicyNumber: customer.policy.policyNumber },
       );
     } catch (err) {
-      this.logger.warn(`Extraction failed for ${claim.reference}: ${err instanceof Error ? err.message : err}`);
+      this.logger.error(`Extraction failed for ${claim.reference}: ${describeCaimexError(err)}`);
       await this.whatsapp.sendText(
         msg.from,
-        "I couldn't read that clearly. Please send another photo: flat, in good light, all four corners visible.",
+        `Something went wrong on our side while reading your report. Your claim ${claim.reference} is saved; please send the report again in a few minutes.`,
       );
       return;
     }

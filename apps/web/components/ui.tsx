@@ -65,8 +65,8 @@ const TRACK: { label: string; statuses: ClaimStatus[] }[] = [
   { label: 'Decided', statuses: ['APPROVED', 'REJECTED', 'PAYMENT_PENDING', 'CLOSED'] },
 ];
 
-export function StatusTrack({ status }: { status: ClaimStatus }) {
-  const current = TRACK.findIndex((s) => s.statuses.includes(status));
+export function StatusTrack({ status, stage = status }: { status: ClaimStatus; stage?: ClaimStatus }) {
+  const current = TRACK.findIndex((s) => s.statuses.includes(stage));
   const final = status === 'REJECTED' ? 'Rejected' : status === 'APPROVED' || status === 'PAYMENT_PENDING' ? 'Approved' : null;
   return (
     <ol className="grid grid-cols-6 gap-1" aria-label="Claim progress">

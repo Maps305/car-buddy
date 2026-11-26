@@ -32,11 +32,22 @@ export class CaimexOutputError extends Error {
 
 type ParseResult<T> = { success: true; data: T } | { success: false; error: string };
 
+type JsonMode = 'json_schema' | 'json_object' | 'plain';
+const JSON_MODES: JsonMode[] = ['json_schema', 'json_object', 'plain'];
+
+export function describeCaimexError(err: unknown): string {
+  if (err instanceof OpenAI.APIError) {
+    const body = err.error ? ` ${JSON.stringify(err.error)}` : '';
+    return `${err.message}${body}`;
+  }
+  return err instanceof Error ? err.message : String(err);
+}
+
 @Injectable()
 export class CaimexService {
   private readonly logger = new Logger(CaimexService.name);
   private readonly client: OpenAI;
-  private readonly jsonSchemaUnsupported = new Set<string>();
+  private readonly jsonModeFloor = new Map<string, number>();
 
   constructor(@Inject(caimexConfig.KEY) private readonly config: ConfigType<typeof caimexConfig>) {
     if (!config.apiKey) throw new Error('CAIMEX_API_KEY is not set');
@@ -112,34 +123,48 @@ export class CaimexService {
     name: string,
     schema: Record<string, unknown>,
   ): Promise<string> {
-    if (!this.jsonSchemaUnsupported.has(model)) {
+    for (let i = this.jsonModeFloor.get(model) ?? 0; i < JSON_MODES.length; i++) {
+      const mode = JSON_MODES[i];
       try {
-        const res = await this.client.chat.completions.create({
-          model,
-          messages,
-          temperature: 0,
-          response_format: { type: 'json_schema', json_schema: { name, schema, strict: true } },
-        });
+        const res = await this.client.chat.completions.create(this.jsonRequest(mode, model, messages, name, schema));
         return res.choices[0].message.content ?? '';
       } catch (err) {
-        const schemaRejected =
-          err instanceof OpenAI.BadRequestError && /response_format|json_schema|schema/i.test(err.message);
-        if (!schemaRejected) throw err;
-        this.logger.warn(`${model} rejected json_schema; falling back to json_object`);
-        this.jsonSchemaUnsupported.add(model);
+        const isLast = i === JSON_MODES.length - 1;
+        if (!(err instanceof OpenAI.BadRequestError) || isLast) throw err;
+        this.logger.warn(`${model} rejected ${mode} (${describeCaimexError(err)}); trying ${JSON_MODES[i + 1]}`);
+        this.jsonModeFloor.set(model, i + 1);
       }
     }
+    throw new Error('unreachable');
+  }
 
-    const res = await this.client.chat.completions.create({
+  private jsonRequest(
+    mode: JsonMode,
+    model: string,
+    messages: ChatCompletionMessageParam[],
+    name: string,
+    schema: Record<string, unknown>,
+  ) {
+    if (mode === 'json_schema') {
+      return {
+        model,
+        messages,
+        temperature: 0,
+        response_format: { type: 'json_schema' as const, json_schema: { name, schema, strict: true } },
+      };
+    }
+    return {
       model,
       temperature: 0,
-      response_format: { type: 'json_object' },
+      ...(mode === 'json_object' ? { response_format: { type: 'json_object' as const } } : {}),
       messages: [
-        { role: 'system', content: `Respond with JSON only, matching this JSON Schema:\n${JSON.stringify(schema)}` },
+        {
+          role: 'system' as const,
+          content: `Respond with a single JSON object only, no prose or code fences, matching this JSON Schema:\n${JSON.stringify(schema)}`,
+        },
         ...messages,
       ],
-    });
-    return res.choices[0].message.content ?? '';
+    };
   }
 
   private parse<S extends z.ZodType>(schema: S, raw: string): ParseResult<z.infer<S>> {

@@ -1,9 +1,9 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, count, desc, eq, gt, inArray } from 'drizzle-orm';
 import { randomBytes } from 'node:crypto';
 import { DB, type Database } from '../db/db.module';
 import { claimDocuments, claimEvents, claims, type ClaimStatus } from '../db/schema';
-import { canTransition, InvalidTransitionError, type Actor } from './claim-transitions';
+import { canTransition, INFO_RETURN_STATUSES, InvalidTransitionError, type Actor } from './claim-transitions';
 
 export type Claim = typeof claims.$inferSelect;
 export type Tx = Parameters<Parameters<Database['transaction']>[0]>[0];
@@ -65,6 +65,59 @@ export class ClaimsService {
       await this.transition(draft.id, 'CLOSED', { type: 'SYSTEM' }, { reason });
     }
     return open;
+  }
+
+  async findAwaitingInfo(customerId: string): Promise<Claim | undefined> {
+    const [claim] = await this.db
+      .select()
+      .from(claims)
+      .where(and(eq(claims.customerId, customerId), eq(claims.status, 'ADDITIONAL_INFO_REQUIRED')))
+      .orderBy(desc(claims.updatedAt))
+      .limit(1);
+    return claim;
+  }
+
+  async addCustomerReply(claimId: string, text: string, actor: Actor): Promise<void> {
+    await this.db.insert(claimEvents).values({
+      claimId,
+      type: 'CUSTOMER_REPLY',
+      actorType: actor.type,
+      actorId: actor.id,
+      data: { text: text.slice(0, 4000) },
+    });
+  }
+
+  async resumeAfterInfo(claimId: string, actor: Actor, data?: Record<string, unknown>): Promise<Claim> {
+    const request = await this.latestInfoRequest(claimId);
+    const origin = request?.from && INFO_RETURN_STATUSES.includes(request.from) ? request.from : 'UNDER_REVIEW';
+    return this.transition(claimId, origin, actor, data);
+  }
+
+  async repliesSinceInfoRequest(claimId: string): Promise<number> {
+    const request = await this.latestInfoRequest(claimId);
+    if (!request) return 0;
+    const [row] = await this.db
+      .select({ n: count() })
+      .from(claimEvents)
+      .where(
+        and(
+          eq(claimEvents.claimId, claimId),
+          eq(claimEvents.actorType, 'CUSTOMER'),
+          inArray(claimEvents.type, ['CUSTOMER_REPLY', 'DOCUMENT_ADDED']),
+          gt(claimEvents.createdAt, request.at),
+        ),
+      );
+    return row?.n ?? 0;
+  }
+
+  private async latestInfoRequest(claimId: string) {
+    const [request] = await this.db
+      .select({ at: claimEvents.createdAt, from: claimEvents.fromStatus })
+      .from(claimEvents)
+      .where(and(eq(claimEvents.claimId, claimId), eq(claimEvents.toStatus, 'ADDITIONAL_INFO_REQUIRED')))
+      .orderBy(desc(claimEvents.createdAt))
+      .limit(1);
+    return request;
   }
 
   async addDocument(claimId: string, doc: NewClaimDocument, actor: Actor): Promise<ClaimDocument> {

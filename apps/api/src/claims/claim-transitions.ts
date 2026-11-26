@@ -7,6 +7,8 @@ export interface Actor {
   id?: string;
 }
 
+export const INFO_RETURN_STATUSES: readonly ClaimStatus[] = ['UNDER_REVIEW', 'ASSESSMENT_IN_PROGRESS', 'AWAITING_DECISION'];
+
 const TRANSITIONS: Record<ClaimStatus, readonly ClaimStatus[]> = {
   DRAFT: ['SUBMITTED', 'CLOSED'],
   SUBMITTED: ['UNDER_REVIEW'],
@@ -15,7 +17,7 @@ const TRANSITIONS: Record<ClaimStatus, readonly ClaimStatus[]> = {
   ASSESSMENT_IN_PROGRESS: ['ASSESSMENT_COMPLETED', 'ADDITIONAL_INFO_REQUIRED'],
   ASSESSMENT_COMPLETED: ['AWAITING_DECISION'],
   AWAITING_DECISION: ['APPROVED', 'REJECTED', 'ADDITIONAL_INFO_REQUIRED'],
-  ADDITIONAL_INFO_REQUIRED: ['UNDER_REVIEW'],
+  ADDITIONAL_INFO_REQUIRED: INFO_RETURN_STATUSES,
   APPROVED: ['PAYMENT_PENDING'],
   REJECTED: ['CLOSED'],
   PAYMENT_PENDING: ['CLOSED'],
@@ -24,7 +26,7 @@ const TRANSITIONS: Record<ClaimStatus, readonly ClaimStatus[]> = {
 
 const CUSTOMER_SIDE: Partial<Record<ClaimStatus, readonly ClaimStatus[]>> = {
   DRAFT: ['SUBMITTED', 'CLOSED'],
-  ADDITIONAL_INFO_REQUIRED: ['UNDER_REVIEW'],
+  ADDITIONAL_INFO_REQUIRED: INFO_RETURN_STATUSES,
 };
 
 const SYSTEM_SIDE: Partial<Record<ClaimStatus, readonly ClaimStatus[]>> = {

@@ -100,3 +100,9 @@ export function claimResume(reference: string, registration: string, waitingFor:
 }
 
 export const vehicleLabel = (v: InsuredVehicle) => `${v.registration} (${v.make} ${v.model})`;
+
+export const infoReplyAdded = (reference: string) =>
+  `Added to claim *${reference}*. Send anything else, or tap *Done* when you have sent everything.`;
+
+export const infoReplySent = (reference: string) =>
+  `Thanks. I've sent your reply to the claims team for claim *${reference}*. I'll message you here when there's an update.`;

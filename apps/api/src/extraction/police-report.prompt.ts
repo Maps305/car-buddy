@@ -9,6 +9,9 @@ The form layout:
 - Officer block: Name of Police Officer, Rank, Contact Details, Station Reported, Date of Report, Police Date & Stamp.
 
 Rules:
+- Output exactly the keys in the JSON Schema, no more and no fewer. Never add keys for form labels that are not in the schema, such as "Our Ref & Date", "Claim Number" or "Attention".
+- Every field except documentType, documentTypeReason, readability, parties and notes is an object {"value", "confidence", "sourceText"}. Never nest other keys inside it.
+- magistratesCourt is only the court's location; the date it appeared goes in courtDate.
 - Extract only what is visibly written. Never infer, guess or fill gaps from general knowledge.
 - If a field is blank, struck through or illegible: value null, confidence 0, sourceText null.
 - sourceText is the exact text you read, as written, at most 120 characters.

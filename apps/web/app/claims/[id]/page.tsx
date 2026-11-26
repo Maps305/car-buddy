@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { PoliceReportEvidence } from '@/components/evidence';
+import { InfoRequests, buildThread } from '@/components/info-requests';
 import { AppHeader, Panel, Plate, StatusBadge, StatusTrack } from '@/components/ui';
 import { ApiError, api } from '@/lib/api';
 import { STATUS_LABEL, formatDate, formatDateTime, formatMoney, humanise } from '@/lib/format';
@@ -16,7 +17,16 @@ function eventText(e: ClaimEvent): string {
     case 'CREATED':
       return 'Claim opened on WhatsApp';
     case 'DOCUMENT_ADDED':
+      if (d.documentType === 'OTHER' && e.actorType === 'CUSTOMER') return 'Customer sent a file';
       return `Document received${d.needsHumanReview ? ', flagged for checking' : ''}`;
+    case 'CUSTOMER_REPLY': {
+      const text = typeof d.text === 'string' ? d.text : '';
+      return `Customer replied: “${text.length > 140 ? `${text.slice(0, 140)}…` : text}”`;
+    }
+    case 'CUSTOMER_NOTIFIED':
+      return 'WhatsApp message sent to the customer';
+    case 'CUSTOMER_NOTIFY_FAILED':
+      return `WhatsApp message not delivered: ${typeof d.reason === 'string' ? d.reason : 'unknown error'}`;
     case 'DOCUMENT_CONFIRMED':
       return 'Customer confirmed the police report details';
     case 'STATUS_CHANGED': {
@@ -27,7 +37,12 @@ function eventText(e: ClaimEvent): string {
       if (e.toStatus === 'ASSESSMENT_COMPLETED' && typeof d.recommendation === 'string')
         return `Assessment submitted, recommends ${RECOMMENDATION[d.recommendation as keyof typeof RECOMMENDATION].toLowerCase()}`;
       if (e.toStatus === 'AWAITING_DECISION') return 'Sent to the processor for a decision';
-      if (e.toStatus === 'UNDER_REVIEW') return e.fromStatus === 'ADDITIONAL_INFO_REQUIRED' ? 'Review resumed' : 'Review started';
+      if (e.fromStatus === 'ADDITIONAL_INFO_REQUIRED' && e.toStatus)
+        return e.actorType === 'CUSTOMER'
+          ? `Customer sent the requested information, back to ${STATUS_LABEL[e.toStatus].toLowerCase()}`
+          : `Resumed, back to ${STATUS_LABEL[e.toStatus].toLowerCase()}`;
+      if (e.toStatus === 'UNDER_REVIEW') return 'Review started';
+      if (e.toStatus === 'ADDITIONAL_INFO_REQUIRED') return 'Asked the customer for more information';
       if (e.toStatus === 'APPROVED')
         return `Approved: ${d.settlement === 'REPAIR' ? `repair at ${d.garage}` : 'pay out'}`;
       if (typeof d.note === 'string') return `${base}: ${d.note}`;
@@ -68,7 +83,11 @@ export default async function ClaimPage({ params }: { params: Promise<{ id: stri
   const { claim, customer, policy, vehicle, documents, events, assignment, assessment, allowedActions } = detail;
   const assessors = allowedActions.includes('assign') ? await api<Assessor[]>('/staff/assessors') : [];
   const policeReport = documents.find((d) => d.type === 'POLICE_REPORT');
-  const otherDocs = documents.filter((d) => d !== policeReport);
+  const thread = buildThread(events, documents);
+  const askedFrom = events.findLast((e) => e.toStatus === 'ADDITIONAL_INFO_REQUIRED')?.fromStatus;
+  const stage = claim.status === 'ADDITIONAL_INFO_REQUIRED' && askedFrom ? askedFrom : claim.status;
+  const inThread = new Set(thread.flatMap((i) => (i.kind === 'file' ? [i.doc.id] : [])));
+  const otherDocs = documents.filter((d) => d !== policeReport && !inThread.has(d.id));
 
   return (
     <>
@@ -90,7 +109,7 @@ export default async function ClaimPage({ params }: { params: Promise<{ id: stri
         </p>
 
         <div className="mt-6">
-          <StatusTrack status={claim.status} />
+          <StatusTrack status={claim.status} stage={stage} />
         </div>
 
         <div className="mt-8 grid grid-cols-[minmax(0,1fr)] items-start gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
@@ -102,6 +121,19 @@ export default async function ClaimPage({ params }: { params: Promise<{ id: stri
                 <p className="text-slate">No police report has been received yet.</p>
               )}
             </Panel>
+
+            {thread.length > 0 && (
+              <Panel
+                title="Information requests"
+                aside={
+                  claim.status === 'ADDITIONAL_INFO_REQUIRED' ? (
+                    <span className="text-sm text-slate">Waiting for the customer</span>
+                  ) : undefined
+                }
+              >
+                <InfoRequests claimId={claim.id} items={thread} />
+              </Panel>
+            )}
 
             {assessment && (
               <Panel title="Assessment" aside={<span className="text-sm text-slate">{assessment.assessorName}, {formatDateTime(assessment.createdAt)}</span>}>

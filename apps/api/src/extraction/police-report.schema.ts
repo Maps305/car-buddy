@@ -1,16 +1,20 @@
 import { z } from 'zod';
 
+const UNREAD = { value: null, confidence: 0, sourceText: null };
+
 const field = <T extends z.ZodType>(value: T) =>
-  z.strictObject({
-    value: value.nullable(),
-    confidence: z.number().min(0).max(1),
-    sourceText: z.string().nullable(),
-  });
+  z
+    .object({
+      value: value.nullable(),
+      confidence: z.number().min(0).max(1),
+      sourceText: z.string().nullable(),
+    })
+    .catch(UNREAD);
 
 const text = field(z.string());
 const flag = field(z.boolean());
 
-const party = z.strictObject({
+const party = z.object({
   position: z.enum(['FIRST', 'SECOND', 'THIRD']),
   driverName: text,
   residentialAddress: text,
@@ -26,7 +30,7 @@ const party = z.strictObject({
   vehicleDamage: text,
 });
 
-export const policeReportExtractionSchema = z.strictObject({
+export const policeReportExtractionSchema = z.object({
   documentType: z.enum(['MOOVAH_POLICE_REPORT', 'OTHER_POLICE_REPORT', 'OTHER_DOCUMENT', 'UNREADABLE']),
   documentTypeReason: z.string(),
   readability: z.enum(['GOOD', 'PARTIAL', 'POOR']),

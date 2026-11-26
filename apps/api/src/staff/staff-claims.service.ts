@@ -8,6 +8,8 @@ import {
 } from '@nestjs/common';
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { z } from 'zod';
+import { claimMessages } from '../claims/claim-messages';
+import { ClaimNotifier } from '../claims/claim-notifier';
 import { InvalidTransitionError, type Actor } from '../claims/claim-transitions';
 import { ClaimsService } from '../claims/claims.service';
 import { DB, type Database } from '../db/db.module';
@@ -66,6 +68,7 @@ export class StaffClaimsService {
     @Inject(DB) private readonly db: Database,
     private readonly claims: ClaimsService,
     private readonly media: MediaStore,
+    private readonly notifier: ClaimNotifier,
   ) {}
 
   async queue(staff: StaffPrincipal, statuses: ClaimStatus[], mineOnly: boolean) {
@@ -208,10 +211,13 @@ export class StaffClaimsService {
 
     try {
       switch (action) {
-        case 'start-review':
-          return await this.claims.transition(claimId, 'UNDER_REVIEW', actor);
+        case 'start-review': {
+          const updated = await this.claims.transition(claimId, 'UNDER_REVIEW', actor);
+          await this.notifier.notify(claimId, claimMessages.reviewStarted);
+          return updated;
+        }
         case 'resume-review':
-          return await this.claims.transition(claimId, 'UNDER_REVIEW', actor);
+          return await this.claims.resumeAfterInfo(claimId, actor);
         case 'start-assessment':
           return await this.claims.transition(claimId, 'ASSESSMENT_IN_PROGRESS', actor);
         case 'close':
@@ -223,7 +229,7 @@ export class StaffClaimsService {
             .from(staffUsers)
             .where(and(eq(staffUsers.id, assessorId), eq(staffUsers.role, 'ASSESSOR'), eq(staffUsers.active, true)));
           if (!assessor) throw new BadRequestException('Choose an active assessor');
-          return await this.db.transaction(async (tx) => {
+          const assigned = await this.db.transaction(async (tx) => {
             await tx.update(claimAssignments).set({ active: false }).where(eq(claimAssignments.claimId, claimId));
             await tx.insert(claimAssignments).values({ claimId, assessorId, assignedBy: staff.id });
             return this.claims.transition(
@@ -234,6 +240,8 @@ export class StaffClaimsService {
               tx,
             );
           });
+          await this.notifier.notify(claimId, claimMessages.assessorAssigned);
+          return assigned;
         }
         case 'submit-assessment': {
           const body = parse(bodies['submit-assessment'], rawBody);
@@ -258,16 +266,22 @@ export class StaffClaimsService {
         }
         case 'request-info': {
           const body = parse(bodies['request-info'], rawBody);
-          return await this.claims.transition(claimId, 'ADDITIONAL_INFO_REQUIRED', actor, { note: body.note });
+          const updated = await this.claims.transition(claimId, 'ADDITIONAL_INFO_REQUIRED', actor, { note: body.note });
+          await this.notifier.notify(claimId, (c) => claimMessages.infoRequired(c, body.note));
+          return updated;
         }
         case 'approve': {
           const body = parse(bodies.approve, rawBody);
           if (body.settlement === 'REPAIR' && !body.garage) throw new BadRequestException('Name the repairing garage');
-          return await this.claims.transition(claimId, 'APPROVED', actor, body);
+          const updated = await this.claims.transition(claimId, 'APPROVED', actor, body);
+          await this.notifier.notify(claimId, (c) => claimMessages.approved(c, body));
+          return updated;
         }
         case 'reject': {
           const body = parse(bodies.reject, rawBody);
-          return await this.claims.transition(claimId, 'REJECTED', actor, { note: body.note });
+          const updated = await this.claims.transition(claimId, 'REJECTED', actor, { note: body.note });
+          await this.notifier.notify(claimId, (c) => claimMessages.rejected(c, body.note));
+          return updated;
         }
       }
     } catch (err) {
@@ -290,6 +304,7 @@ export class StaffClaimsService {
     if (assessor) {
       if (status === 'ASSESSOR_ASSIGNED') actions.push('start-assessment');
       if (status === 'ASSESSMENT_IN_PROGRESS') actions.push('submit-assessment', 'request-info');
+      if (status === 'ADDITIONAL_INFO_REQUIRED') actions.push('resume-review');
     }
     return actions;
   }

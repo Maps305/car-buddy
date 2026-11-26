@@ -149,7 +149,7 @@ export function ActionPanel({
             <input name="garage" className={input} />
           </label>
           <label className="block">
-            <Label hint="optional">Note</Label>
+            <Label hint="optional, sent on WhatsApp">Message to customer</Label>
             <textarea name="note" rows={2} className={input} />
           </label>
         </ActionForm>
@@ -160,26 +160,35 @@ export function ActionPanel({
           claimId={claimId}
           action="request-info"
           submit="Ask customer for more information"
-          pendingLabel="Saving…"
+          pendingLabel="Sending…"
           variant="secondary"
         >
           <label className="block">
-            <Label>What’s needed</Label>
-            <textarea name="note" required minLength={3} rows={2} className={input} />
+            <Label hint="sent on WhatsApp as written">Message to customer</Label>
+            <textarea
+              name="note"
+              required
+              minLength={3}
+              rows={3}
+              placeholder="For example: Please send photos of the rear bumper and your driver’s licence, front and back."
+              className={input}
+            />
           </label>
         </ActionForm>
       )}
 
       {has('resume-review') && (
-        <ActionForm claimId={claimId} action="resume-review" submit="Resume review" pendingLabel="Resuming…">
-          <p className="text-sm text-slate">Use this once the customer has sent what was asked for.</p>
+        <ActionForm claimId={claimId} action="resume-review" submit="Resume without waiting" pendingLabel="Resuming…" variant="secondary">
+          <p className="text-sm text-slate">
+            When the customer replies on WhatsApp and taps Done, the claim goes back to whoever asked. Use this to continue without their reply.
+          </p>
         </ActionForm>
       )}
 
       {has('reject') && (
         <ActionForm claimId={claimId} action="reject" submit="Reject claim" pendingLabel="Rejecting…" variant="danger">
           <label className="block">
-            <Label>Reason</Label>
+            <Label hint="sent to the customer">Reason</Label>
             <textarea name="note" required minLength={3} rows={2} className={input} />
           </label>
         </ActionForm>
